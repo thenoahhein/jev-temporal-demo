@@ -4,9 +4,21 @@
 
 **Jev decides. Temporal executes durably.**
 
-This repo is a small autonomous **incident-response agent**. A production service starts throwing errors; the agent repeatedly answers *"given everything we know right now, what should we do next?"*, executes that step, observes the result, and asks again — until the incident is resolved or a human takes over.
+## What this demo shows
 
-The decision loop itself is a Temporal Workflow. Jev ([TypeSafe](https://typesafe.ai)'s System One model) is called inside that loop as an ordinary Activity that returns **typed judgments with probabilities**, not prose. There is no LLM holding the agent loop in memory.
+Most AI agents today are a `while` loop inside an LLM call: the model holds the plan in its context, calls tools, and if the process dies or a tool flakes, the whole thing starts over (or silently forgets). This repo shows the alternative — **put the loop in Temporal and use Jev for the decisions.**
+
+The example is an autonomous **incident-response agent**. `checkout-api` starts throwing 18% errors. Every iteration the Temporal Workflow gathers structured state (metrics, recent deploys, dependency health, actions already taken), asks Jev *"given all of this, what should we do next?"*, applies a plain-code safety policy, executes the chosen action as a Temporal Activity, observes, and repeats until the incident is resolved or a human takes over.
+
+Three things happen on screen that are hard to get any other way:
+
+1. **Jev decides, in typed form.** No rule says "deploy 7 minutes ago ⇒ rollback". Jev looks at the state and returns `next_action: check_recent_deploy` (61%), then `rollback_deploy` (75%) — plus a severity Score and two Noul probabilities (`safe_to_act_autonomously`, `needs_deeper_reasoning`) that ordinary code turns into *execute / consult a reasoning model / ask a human*.
+2. **Infrastructure fails; Temporal handles it.** The rollback Activity times out on attempt 1. Temporal retries it. Jev is not asked again — it already said what should happen.
+3. **The agent process dies; nothing is lost.** The worker is killed mid-incident and restarted. The Workflow resumes from Temporal history with every Jev decision, the completed rollback, and the pending timer intact, then finishes the job.
+
+Along the way a human-approval gate parks the workflow on a durable Signal until someone runs `npm run approve` — the same workflow then continues.
+
+Jev ([TypeSafe](https://typesafe.ai)'s System One model) is called inside the loop as an ordinary Activity that returns **typed judgments with probabilities**, not prose. There is no LLM holding the agent loop in memory.
 
 ```text
 Temporal = durable agent runtime
