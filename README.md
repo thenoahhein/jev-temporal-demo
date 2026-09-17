@@ -30,38 +30,50 @@ Human    = escalation
 
 ## Architecture
 
+Everything inside the box is one Temporal Workflow (`incidentResponseAgent`). Each arrow out of the box is an Activity — the only place I/O happens. The loop runs until the incident is resolved or handed off.
+
 ```text
-                       ┌──────────────────────────────────────────────┐
-                       │  Temporal Workflow: incidentResponseAgent    │
-                       │  (owns state, history, retries, timers,      │
-                       │   waiting, recovery)                         │
-                       └──────────────────────────────────────────────┘
-                                          │
-            ┌─────────────────────────────┼──────────────────────────────┐
-            │                             │                              │
-            ▼                             ▼                              ▼
-   gather state                      askJev()                     policy (plain code)
-   getMetrics / getLogs /     ┌─────────────────────────┐        confidence thresholds,
-   getRecentDeploy            │ next_action   : Choice  │        risk classes,
-                              │ severity      : Score   │        "always ask a human" list
-                              │ safe_to_act   : Noul    │
-                              │ needs_deeper  : Noul    │
-                              └─────────────────────────┘
-                                          │
-                 ┌────────────────────────┼────────────────────────┐
-                 ▼                        ▼                        ▼
-            execute action        consultReasoningModel      notifyHuman + wait
-   inspect_logs / inspect_metrics   (optional slow LLM,      for humanDecision Signal
-   check_recent_deploy              mocked without a key)    (durable, survives restarts)
-   restart_service / rollback_deploy
-   wait_and_observe (Temporal timer)
-                 │                        │                        │
-                 └────────────────────────┴────────────────────────┘
-                                          │
-                                  observe new state
-                                          │
-                                          ▼
-                                    askJev() again …
+ ┌─ Temporal Workflow ─────────────────────────────────────────────────────────┐
+ │                                                                             │
+ │   1. gather state ──────────────────────────► getMetrics / getLogs /        │
+ │        incident, metrics, deploys,             getRecentDeploy  (Activities)│
+ │        dependencies, actions taken                                          │
+ │                │                                                            │
+ │                ▼                                                            │
+ │   2. ask Jev ───────────────────────────────► askJev  (Activity → TypeSafe) │
+ │        next_action              : Choice     returns typed answers          │
+ │        incident_severity        : Score      + probabilities + confidence   │
+ │        safe_to_act_autonomously : Noul                                      │
+ │        needs_deeper_reasoning   : Noul                                      │
+ │                │                                                            │
+ │                ▼                                                            │
+ │   3. policy (plain TypeScript, src/policy.ts)                               │
+ │        risk class of the action × Jev's confidence & safety → one route     │
+ │                │                                                            │
+ │        ┌───────┴────────────┬─────────────────────────┐                     │
+ │        ▼                    ▼                         ▼                     │
+ │     execute      consult reasoning model      wait for a human              │
+ │        │         (consultReasoningModel:      (notifyHuman, then park on    │
+ │        │          optional LLM, mocked         the humanDecision Signal —   │
+ │        │          without a key)               durable, survives restarts)  │
+ │        │                    │                         │                     │
+ │        └────────────────────┴─────────────────────────┘                     │
+ │                │                                                            │
+ │                ▼                                                            │
+ │   4. run the action ────────────────────────► restartService /              │
+ │        retried by Temporal on failure;         rollbackDeployment /         │
+ │        wait_and_observe = durable timer        getLogs … (Activities)       │
+ │                │                                                            │
+ │                ▼                                                            │
+ │   5. observe ───────────────────────────────► getMetrics  (Activity)        │
+ │        record result in workflow state                                      │
+ │                │                                                            │
+ │                └──────────────► back to 2, until resolve_incident           │
+ │                                                                             │
+ └─────────────────────────────────────────────────────────────────────────────┘
+
+ Temporal keeps every state snapshot, Jev answer, action result, pending timer
+ and Signal in history. Kill the worker at any point; the loop resumes there.
 ```
 
 The loop in `src/workflows/incident-response.ts`, condensed:
