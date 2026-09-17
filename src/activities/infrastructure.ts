@@ -76,6 +76,6 @@ export async function rollbackDeployment(input: {
   section("TEMPORAL", `→ rollbackDeployment(${input.from} → ${input.to})`);
   await delay(jitter());
   const msg = `service ${input.service} rolled back ${input.from} → ${input.to}`;
-  section("ROLLBACK", msg);
+  section("ROLLBACK COMPLETE", msg);
   return msg;
 }
