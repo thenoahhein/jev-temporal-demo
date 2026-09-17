@@ -1,0 +1,31 @@
+{
+  "name": "jev-temporal-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Jev (TypeSafe) + Temporal: a durable incident-response agent",
+  "scripts": {
+    "temporal": "temporal server start-dev --ui-port 8233",
+    "worker": "tsx src/worker.ts",
+    "start": "tsx src/start-workflow.ts",
+    "approve": "tsx src/human.ts approve",
+    "reject": "tsx src/human.ts reject",
+    "status": "tsx src/human.ts status",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@temporalio/activity": "^1.24.0",
+    "@temporalio/client": "^1.24.0",
+    "@temporalio/worker": "^1.24.0",
+    "@temporalio/workflow": "^1.24.0",
+    "@typesafe-ai/sdk": "^0.6.0"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "^1.24.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  }
+}
